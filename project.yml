@@ -12,7 +12,7 @@ targets:
       - path: Sources/xrshell
     settings:
       # 1. Point to your static file
-      INFOPLIST_FILE: Sources/xrshell/Info.plist
+      INFOPLIST_FILE: Info.plist
       
       # 2. CRITICAL: Tell Xcode to merge build settings into the plist
       GENERATE_INFOPLIST_FILE: YES
