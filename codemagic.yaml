@@ -30,9 +30,6 @@ workflows:
           plutil -replace CFBundleDisplayName -string "$APP_NAME" "$PLIST_PATH"
           plutil -replace CFBundleName -string "$APP_NAME" "$PLIST_PATH"
           
-          # Fix: Add CFBundleIconName explicitly for iOS 11+ compliance
-          plutil -replace CFBundleIconName -string "AppIcon" "$PLIST_PATH"
-          
           cat <<EOF > "$CONFIG_PATH"
           import Foundation
 
@@ -47,20 +44,16 @@ workflows:
         script: |
           echo "Generating App Icons..."
           
-          # 1. Check for icon.png, download placeholder if missing
           ICON_SOURCE="icon.png"
           if [ ! -f "$ICON_SOURCE" ]; then
-            echo "⚠️ No icon.png found in root! Downloading placeholder..."
-            # Note: We use a jpg placeholder here to ensure it starts opaque
+            echo "⚠️ No icon.png found! Downloading placeholder..."
             curl -o "$ICON_SOURCE" https://dummyimage.com/1024x1024/007AFF/ffffff.jpg&text=XR
           fi
 
-          # 2. Create Asset Catalog Structure
           ASSETS_DIR="Sources/xrshell/Assets.xcassets"
           ICONSET_DIR="$ASSETS_DIR/AppIcon.appiconset"
           mkdir -p "$ICONSET_DIR"
 
-          # 3. Create Contents.json defining all required sizes
           cat <<EOF > "$ICONSET_DIR/Contents.json"
           {
             "images": [
@@ -87,9 +80,8 @@ workflows:
           }
           EOF
 
-          # 4. Resize images using sips and STRIP ALPHA CHANNEL
           function resize() {
-            # -s hasAlpha false: This removes the transparency channel to satisfy App Store validation
+            # Strip alpha to fix transparency error
             sips -z $1 $1 -s format png -s hasAlpha false "$ICON_SOURCE" --out "$ICONSET_DIR/$2" > /dev/null
           }
 
@@ -109,15 +101,13 @@ workflows:
           resize 167 "Icon-83.5@2x.png"
           resize 1024 "Icon-1024.png"
 
-          echo "✅ Icons generated successfully (Opaque) in $ICONSET_DIR"
+          echo "✅ Icons generated successfully."
 
       - name: Generate Xcode Project (XcodeGen)
         script: |
-          # 1. Install XcodeGen
           brew install xcodegen
 
-          # 2. Create a project.yml definition for XcodeGen
-          # Added ASSETCATALOG_COMPILER_APPICON_NAME to link the icons
+          # We add INFOPLIST_KEY_CFBundleIconName to explicitly set the plist key
           cat <<EOF > project.yml
           name: xrshell
           options:
@@ -139,9 +129,9 @@ workflows:
                 SWIFT_VERSION: 5.0
                 RECOMMENDED_ASSET_TYPES: "appicon"
                 ASSETCATALOG_COMPILER_APPICON_NAME: "AppIcon"
+                INFOPLIST_KEY_CFBundleIconName: "AppIcon"
           EOF
           
-          # 3. Run XcodeGen to create xrshell.xcodeproj
           xcodegen generate
 
       # --- AUTOMATIC CODE SIGNING START ---
