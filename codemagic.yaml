@@ -51,7 +51,8 @@ workflows:
           ICON_SOURCE="icon.png"
           if [ ! -f "$ICON_SOURCE" ]; then
             echo "⚠️ No icon.png found in root! Downloading placeholder..."
-            curl -o "$ICON_SOURCE" https://dummyimage.com/1024x1024/007AFF/ffffff.png&text=XR
+            # Note: We use a jpg placeholder here to ensure it starts opaque
+            curl -o "$ICON_SOURCE" https://dummyimage.com/1024x1024/007AFF/ffffff.jpg&text=XR
           fi
 
           # 2. Create Asset Catalog Structure
@@ -86,9 +87,10 @@ workflows:
           }
           EOF
 
-          # 4. Resize images using sips (built-in macOS tool)
+          # 4. Resize images using sips and STRIP ALPHA CHANNEL
           function resize() {
-            sips -z $1 $1 "$ICON_SOURCE" --out "$ICONSET_DIR/$2" > /dev/null
+            # -s hasAlpha false: This removes the transparency channel to satisfy App Store validation
+            sips -z $1 $1 -s format png -s hasAlpha false "$ICON_SOURCE" --out "$ICONSET_DIR/$2" > /dev/null
           }
 
           resize 40 "Icon-20@2x.png"
@@ -107,7 +109,7 @@ workflows:
           resize 167 "Icon-83.5@2x.png"
           resize 1024 "Icon-1024.png"
 
-          echo "✅ Icons generated successfully in $ICONSET_DIR"
+          echo "✅ Icons generated successfully (Opaque) in $ICONSET_DIR"
 
       - name: Generate Xcode Project (XcodeGen)
         script: |
