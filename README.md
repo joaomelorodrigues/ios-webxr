@@ -1,15 +1,55 @@
-### iOS WebXR Polyfill App
+# iOS WebXR Polyfill App
 
+<img src="assets/demo.gif" width="250" alt="App Demo">
 
-<img src="assets/demo.gif" width="250" title="hover text">
+## Overview
 
+This application serves as a native shell to enable WebXR support on iOS devices, addressing the current lack of native support in mobile Safari. It bridges native ARKit tracking and camera data into a `WKWebView`, allowing standard WebXR applications (such as Three.js or React Three Fiber) to run with AR features enabled.
 
-I was frustrated by Apple's continued (frankly ridiculous) lack of support for mobile WebXR on iOS. Open-source solutions were out-of-date and closed commercial solutions either didn't work or didn't provide the `camera-access` feature.
+This project builds upon the logic of Mozilla's ARKit-WebXR polyfill, modernized for current iOS versions and wrapped in a SwiftUI interface.
 
-This is a mostly vibe-coded iOS WebXR polyfill app, which builds on Mozilla's ARKit-WebXR polyfill code. I'm not a native dev so this is more of a starting point than a full-fledged solution.  I'm hoping this could be useful for others that would like to develop WebXR experiences for iOS.
+## Key Features
 
-Effectively this works by bridging the native ARKit API over to a mocked WebXR API in a WKWebView. I've tested R3F XR on my iPhone 13 Mini on iOS 18.6.2 and it works.
+* **WebXR Device API Support:** Injects a JavaScript polyfill to mock the WebXR API within the WebView.
+* **Camera Access:** Passes video frames from ARKit to the WebView, enabling passthrough AR experiences.
+* **Hit Testing:** Bridges ARKit raycasting to WebXR hit-test requests for placing virtual objects on real-world surfaces.
+* **World Tracking:** Utilizes `ARWorldTrackingConfiguration` for 6DOF tracking.
+* **Debug Tools:** Includes Eruda automatic injection for on-device JavaScript console debugging.
 
-Built and tested using `xtool`: https://github.com/xtool-org/xtool
+## Architecture
 
-Open to PRs and issues
+The application functions as a bridge between Swift (ARKit) and JavaScript (WebGL/WebXR):
+
+1.  **Native Layer:** `ARWebCoordinator` manages an `ARSession`. It captures camera frames, handles world tracking, and performs raycasting.
+2.  **Communication Bridge:** Data is passed to the `WKWebView` via `evaluateJavaScript` and received via `WKScriptMessageHandler`.
+3.  **Polyfill Layer:** A custom JavaScript polyfill intercepts WebXR requests and routes them to the native Swift layer. Video frames are serialized to Base64 (sRGB) and sent to the JS context for rendering as a background texture.
+
+## Installation
+
+### Prerequisites
+
+* Xcode 14.0+
+* iOS Device with A9 chip or later (ARKit support required).
+* *Note: AR features will not function on the iOS Simulator.*
+
+### Building
+
+1.  Clone the repository.
+3.  Build and test on a connected device using `xtool dev` [xtool](https://github.com/xtool-org/xtool).
+
+## Usage
+
+1.  Launch the app.
+2.  Enter the URL of a WebXR-compatible page (e.g., Three.js AR examples).
+3.  Tap "Start AR" within the web experience.
+4.  The native UI will hide, and the AR session will initialize.
+5.  Use the "Exit AR" button to tear down the session and return to the standard browser view.
+
+## Performance & Limitations
+
+* **Frame Serialization:** Video frames are currently converted to Base64 strings to pass them to the WebView. This incurs a performance cost.
+* **FPS Throttling:** Frame transmission is throttled to maintain UI responsiveness.
+
+## Contributing
+
+Pull requests and issue reporting are welcome. This project is intended as a starting point for developers requiring WebXR capabilities on iOS today.
