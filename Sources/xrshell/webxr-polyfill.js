@@ -4983,7 +4983,7 @@ host this content on a secure origin for the best user experience.
             this._gamepadInputSources = [];
             this._touches = [];
             const primaryButtonIndex = 0;
-            this._gamepads.push(createGamepad('', 'right', 1, true));
+            this._gamepads.push(createGamepad('', '', 1, true));
             this._gamepadInputSources.push(new GamepadXRInputSource(this, {}, 0));
             this._gamepadInputSources[0]._active = false;
             this._touches.push({ x: -1, y: -1 });
