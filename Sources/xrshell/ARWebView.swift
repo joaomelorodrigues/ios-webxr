@@ -8,6 +8,15 @@ struct ARWebView: UIViewRepresentable {
     // Binding to control visibility of UI based on AR status
     @Binding var isARActive: Bool
 
+    // Helper to determine the correct bundle based on build environment
+    private var resourceBundle: Bundle {
+        #if SWIFT_PACKAGE
+        return Bundle.module
+        #else
+        return Bundle.main
+        #endif
+    }
+
     func makeUIView(context: Context) -> ARSCNView {
         let arView = ARSCNView(frame: .zero)
         arView.automaticallyUpdatesLighting = true
@@ -38,8 +47,7 @@ struct ARWebView: UIViewRepresentable {
         contentController.addUserScript(errorScript)
 
         // 2. Load Polyfill
-        // CHANGED: Use Bundle.main instead of Bundle.module for Xcode Project builds
-        if let url = Bundle.main.url(forResource: "webxr-polyfill", withExtension: "js"),
+        if let url = resourceBundle.url(forResource: "webxr-polyfill", withExtension: "js"),
            let polyfillSource = try? String(contentsOf: url)
         {
             let userScript = WKUserScript(
