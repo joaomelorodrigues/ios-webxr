@@ -5026,8 +5026,8 @@ host this content on a secure origin for the best user experience.
                 const button = this._gamepads[0].buttons[primaryButtonIndex];
                 button.pressed = false;
                 button.value = 0.0;
-                this._touches[0].x = -1;
-                this._touches[0].y = -1;
+                // this._touches[0].x = -1;
+                // this._touches[0].y = -1;
             });
         }
         static initStyles() {
