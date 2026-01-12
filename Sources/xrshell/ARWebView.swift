@@ -55,18 +55,13 @@ struct ARWebView: UIViewRepresentable {
             contentController.addUserScript(userScript)
         }
         
-        // 3. Inject Eruda (Mobile Console)
-        // We use .atDocumentEnd to ensure the DOM is ready to append the script tag.
-        let erudaSource = """
-            var script = document.createElement('script');
-            script.src = 'https://cdn.jsdelivr.net/npm/eruda';
-            document.body.appendChild(script);
-            script.onload = function () { eruda.init(); }
-        """
-        let erudaScript = WKUserScript(source: erudaSource, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
-        contentController.addUserScript(erudaScript)
-
         let webView = WKWebView(frame: .zero, configuration: webConfig)
+        
+        // Enable Web Inspector
+        if #available(iOS 16.4, *) {
+            webView.isInspectable = true
+        }
+        
         webView.isOpaque = false
         webView.backgroundColor = .clear
         webView.scrollView.backgroundColor = .clear
