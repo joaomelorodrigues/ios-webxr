@@ -16,7 +16,8 @@ struct ContentView: View {
     var body: some View {
         ZStack(alignment: .top) {
             
-            // 1. Background Color (Covers Safe Areas)
+            // 1. Background Color
+            // This color will show in the Safe Zones when AR is active
             safeAreaColor
                 .edgesIgnoringSafeArea(.all)
             
@@ -26,17 +27,20 @@ struct ContentView: View {
                 ARWebView(
                     action: $navAction,
                     isARActive: $isARActive,
-                    currentURLString: $urlString, // Syncs bar when clicking links
+                    currentURLString: $urlString,
                     canGoBack: $canGoBack,
                     canGoForward: $canGoForward
                 )
-                .edgesIgnoringSafeArea(.all) // Webview takes full screen
+                // --- FIX 2: Conditional Safe Area ---
+                // If AR is active: Respect Safe Area (shows background color in bars).
+                // If AR is inactive: Ignore Safe Area (full screen web browsing).
+                .edgesIgnoringSafeArea(isARActive ? [] : .all)
                 
                 // 3. UI Overlay (Address Bar)
                 VStack {
                     if !isARActive {
                         controlBar
-                            .padding(.top, 50) // Adjust for Dynamic Island/Notch
+                            .padding(.top, 50)
                             .transition(.move(edge: .top).combined(with: .opacity))
                     }
                     
@@ -55,38 +59,36 @@ struct ContentView: View {
     }
     
     // MARK: - Subviews
+    // (Rest of the file remains the same)
     
     var controlBar: some View {
         HStack(spacing: 8) {
-            // Back Button
             Button(action: { navAction = .goBack }) {
                 Image(systemName: "chevron.left")
                     .foregroundColor(canGoBack ? .primary : .secondary.opacity(0.5))
             }
             .disabled(!canGoBack)
 
-            // Forward Button
             Button(action: { navAction = .goForward }) {
                 Image(systemName: "chevron.right")
                     .foregroundColor(canGoForward ? .primary : .secondary.opacity(0.5))
             }
             .disabled(!canGoForward)
             
-            // Address Field
             HStack {
                 Image(systemName: "globe")
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.gray)
                 
                 TextField("Search or enter website", text: $urlString)
                     .keyboardType(.webSearch)
                     .autocapitalization(.none)
                     .disableAutocorrection(true)
+                    .foregroundColor(.black)
                     .submitLabel(.go)
                     .onSubmit {
                         processAndLoad()
                     }
                 
-                // Clear text button (optional quality of life)
                 if !urlString.isEmpty {
                     Button(action: { urlString = "" }) {
                         Image(systemName: "xmark.circle.fill")
@@ -95,10 +97,9 @@ struct ContentView: View {
                 }
             }
             .padding(8)
-            .background(Color.white.opacity(0.8)) // Slightly lighter input field
+            .background(Color.white)
             .cornerRadius(8)
             
-            // Go / Reload Button
             Button(action: {
                 processAndLoad()
             }) {
@@ -150,34 +151,28 @@ struct ContentView: View {
     // MARK: - Logic
     
     private func processAndLoad() {
-        // Dismiss keyboard
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         
         let rawInput = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
         if rawInput.isEmpty { return }
         
-        // Search Logic
-        // If it has spaces OR doesn't contain a dot, treat as Google Search
         if rawInput.contains(" ") || !rawInput.contains(".") {
             if let query = rawInput.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
                let searchURL = URL(string: "https://www.google.com/search?q=\(query)") {
                 navAction = .load(searchURL)
             }
         } else {
-            // URL Logic
             var validURLString = rawInput
             if !validURLString.lowercased().hasPrefix("http") {
                 validURLString = "https://" + validURLString
             }
             
             if let finalURL = URL(string: validURLString) {
-                // If the user hit Go on the exact same URL, we want to reload
                 if case .load(let current) = navAction, current == finalURL {
                     navAction = .reload
                 } else {
                     navAction = .load(finalURL)
                 }
-                // Update text field to show the formatted URL
                 urlString = validURLString
             }
         }

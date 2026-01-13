@@ -18,11 +18,10 @@ struct ARWebView: UIViewRepresentable {
     @Binding var isARActive: Bool
     
     // State reporting bindings
-    @Binding var currentURLString: String // To update address bar when navigating inside web
+    @Binding var currentURLString: String
     @Binding var canGoBack: Bool
     @Binding var canGoForward: Bool
 
-    // Helper to determine the correct bundle based on build environment
     private var resourceBundle: Bundle {
         #if SWIFT_PACKAGE
         return Bundle.module
@@ -31,22 +30,26 @@ struct ARWebView: UIViewRepresentable {
         #endif
     }
 
-    func makeUIView(context: Context) -> ARSCNView {
+    func makeUIView(context: Context) -> UIView {
+        let containerView = UIView()
+        containerView.backgroundColor = .systemBackground
+        
+        // 1. Create AR View
         let arView = ARSCNView(frame: .zero)
         arView.automaticallyUpdatesLighting = true
-
+        arView.translatesAutoresizingMaskIntoConstraints = false
+        
+        // 2. Create Web View
         let webConfig = WKWebViewConfiguration()
         webConfig.allowsInlineMediaPlayback = true
-
         let contentController = webConfig.userContentController
         
-        // Register script message handlers
+        // Register handlers
         contentController.add(context.coordinator, name: "initAR")
         contentController.add(context.coordinator, name: "requestSession")
         contentController.add(context.coordinator, name: "stopAR")
         contentController.add(context.coordinator, name: "hitTest")
 
-        // 1. Error Handling Injection
         let errorScript = WKUserScript(
             source: """
                     window.onerror = function(message, source, lineno, colno, error) {
@@ -58,7 +61,6 @@ struct ARWebView: UIViewRepresentable {
                 """, injectionTime: .atDocumentStart, forMainFrameOnly: true)
         contentController.addUserScript(errorScript)
 
-        // 2. Load Polyfill
         if let url = resourceBundle.url(forResource: "webxr-polyfill", withExtension: "js"),
            let polyfillSource = try? String(contentsOf: url)
         {
@@ -68,47 +70,67 @@ struct ARWebView: UIViewRepresentable {
         }
         
         let webView = WKWebView(frame: .zero, configuration: webConfig)
+        if #available(iOS 16.4, *) { webView.isInspectable = true }
         
-        if #available(iOS 16.4, *) {
-            webView.isInspectable = true
-        }
-        
-        webView.isOpaque = false
-        webView.backgroundColor = .clear
-        webView.scrollView.backgroundColor = .clear
-
+        // Default state: Opaque (Normal Browsing)
+        webView.isOpaque = true
+        webView.backgroundColor = .systemBackground
+        webView.scrollView.backgroundColor = .systemBackground
         webView.translatesAutoresizingMaskIntoConstraints = false
-        arView.addSubview(webView)
+
+        // 3. Assemble View Hierarchy
+        // Container -> ARView (Back) -> WebView (Front)
+        containerView.addSubview(arView)
+        containerView.addSubview(webView)
+        
         NSLayoutConstraint.activate([
-            webView.leadingAnchor.constraint(equalTo: arView.leadingAnchor),
-            webView.trailingAnchor.constraint(equalTo: arView.trailingAnchor),
-            webView.topAnchor.constraint(equalTo: arView.topAnchor),
-            webView.bottomAnchor.constraint(equalTo: arView.bottomAnchor),
+            // AR View Full Fill
+            arView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
+            arView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
+            arView.topAnchor.constraint(equalTo: containerView.topAnchor),
+            arView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor),
+            
+            // Web View Full Fill
+            webView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
+            webView.topAnchor.constraint(equalTo: containerView.topAnchor),
+            webView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor),
         ])
 
+        // 4. Hook up Coordinator
         context.coordinator.webView = webView
         context.coordinator.arView = arView
-
         webView.navigationDelegate = context.coordinator
         arView.session.delegate = context.coordinator
 
-        return arView
+        return containerView
     }
 
-    func updateUIView(_ uiView: ARSCNView, context: Context) {
-        guard let webView = context.coordinator.webView else { return }
+    func updateUIView(_ uiView: UIView, context: Context) {
+        guard let webView = context.coordinator.webView,
+              let arView = context.coordinator.arView else { return }
+        
+        if isARActive {
+            // AR Mode: Show AR View, Make Web Transparent
+            arView.isHidden = false
+            webView.isOpaque = false
+            webView.backgroundColor = .clear
+            webView.scrollView.backgroundColor = .clear
+        } else {
+            // Browse Mode: Hide AR View (Kills the ghost frame), Make Web Opaque
+            arView.isHidden = true
+            webView.isOpaque = true
+            webView.backgroundColor = .systemBackground
+            webView.scrollView.backgroundColor = .systemBackground
+        }
         
         // Handle Navigation Actions
         switch action {
         case .idle:
             break
         case .load(let url):
-            // Load the URL
             webView.load(URLRequest(url: url))
-            // Reset action to idle immediately via the coordinator helper
-            DispatchQueue.main.async {
-                self.action = .idle
-            }
+            DispatchQueue.main.async { self.action = .idle }
         case .goBack:
             webView.goBack()
             DispatchQueue.main.async { self.action = .idle }
@@ -120,7 +142,7 @@ struct ARWebView: UIViewRepresentable {
             DispatchQueue.main.async { self.action = .idle }
         }
         
-        // If SwiftUI set isARActive to false, but the session is running, force stop it
+        // Safety check
         if !isARActive && context.coordinator.isSessionRunning {
             context.coordinator.stopSession()
         }
@@ -129,12 +151,10 @@ struct ARWebView: UIViewRepresentable {
     func makeCoordinator() -> ARWebCoordinator {
         let coordinator = ARWebCoordinator()
         
-        // Handle AR State
         coordinator.onSessionActiveChanged = { isActive in
             self.isARActive = isActive
         }
         
-        // Handle Navigation State (Update buttons and URL bar)
         coordinator.onNavigationChanged = { [weak coordinator] in
             guard let webView = coordinator?.webView else { return }
             self.canGoBack = webView.canGoBack
