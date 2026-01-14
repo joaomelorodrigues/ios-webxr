@@ -13,6 +13,9 @@ struct ContentView: View {
     @State private var canGoBack: Bool = false
     @State private var canGoForward: Bool = false
     
+    // UI State
+    @State private var isNavExpanded: Bool = false
+    
     // Custom Color: #272727 (RGB 39, 39, 39)
     private let safeAreaColor = Color(red: 39/255, green: 39/255, blue: 39/255)
     
@@ -20,7 +23,6 @@ struct ContentView: View {
         ZStack(alignment: .top) {
             
             // 1. Background Color
-            // This color will show in the Safe Zones when AR is active
             safeAreaColor
                 .edgesIgnoringSafeArea(.all)
             
@@ -34,20 +36,26 @@ struct ContentView: View {
                     canGoBack: $canGoBack,
                     canGoForward: $canGoForward
                 )
-                // --- FIX 2: Conditional Safe Area ---
-                // If AR is active: Respect Safe Area (shows background color in bars).
-                // If AR is inactive: Ignore Safe Area (full screen web browsing).
                 .edgesIgnoringSafeArea(isARActive ? [] : .all)
                 
-                // 3. UI Overlay (Address Bar)
-                VStack {
-                    if !isARActive {
-                        controlBar
-                            .padding(.top, 50)
-                            .transition(.move(edge: .top).combined(with: .opacity))
+                // 3. UI Overlay
+                if !isARActive {
+                    VStack {
+                        if isNavExpanded {
+                            controlBar
+                                .transition(.move(edge: .top).combined(with: .opacity))
+                                .padding(.horizontal) // Keep padding for the bar
+                        } else {
+                            HStack {
+                                Spacer()
+                                navToggleButton
+                                    .transition(.scale.combined(with: .opacity))
+                            }
+                            .padding(.trailing, 8)
+                        }
+                        Spacer()
                     }
-                    
-                    Spacer()
+                    .padding(.top, 20)
                 }
                 
                 // 4. AR Exit Button
@@ -58,6 +66,7 @@ struct ContentView: View {
             }
         }
         .statusBar(hidden: isARActive)
+        .animation(.spring(), value: isNavExpanded)
         .animation(.easeInOut, value: isARActive)
         .onChange(of: externalLoadURL) { newURL in
             if let validURL = newURL {
@@ -68,7 +77,20 @@ struct ContentView: View {
     }
     
     // MARK: - Subviews
-    // (Rest of the file remains the same)
+    
+    var navToggleButton: some View {
+        Button(action: {
+            isNavExpanded = true
+        }) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 20, weight: .bold))
+                .foregroundColor(.primary)
+                .frame(width: 44, height: 44)
+                .background(.regularMaterial)
+                .cornerRadius(12)
+                .shadow(radius: 4)
+        }
+    }
     
     var controlBar: some View {
         HStack(spacing: 8) {
@@ -109,6 +131,7 @@ struct ContentView: View {
             .background(Color.white)
             .cornerRadius(8)
             
+            // Go Button
             Button(action: {
                 processAndLoad()
             }) {
@@ -120,11 +143,23 @@ struct ContentView: View {
                     .foregroundColor(.white)
                     .cornerRadius(8)
             }
+            
+            // Close Navbar Button
+            Button(action: {
+                isNavExpanded = false
+            }) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(.secondary)
+                    .frame(width: 32, height: 32)
+                    .background(Color.gray.opacity(0.2))
+                    .clipShape(Circle())
+            }
         }
-        .padding()
+        .padding(10)
         .background(.regularMaterial)
         .cornerRadius(16)
-        .padding(.horizontal)
+        .shadow(radius: 4)
     }
     
     var exitARButton: some View {
@@ -161,6 +196,9 @@ struct ContentView: View {
     
     private func processAndLoad() {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        
+        // Auto-collapse the navbar when loading
+        isNavExpanded = false
         
         let rawInput = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
         if rawInput.isEmpty { return }
