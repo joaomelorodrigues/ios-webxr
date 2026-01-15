@@ -1,5 +1,5 @@
 import Foundation
 
 struct AppConfig {
-    static let startURL = "https://pmndrs.github.io/xr/examples/hit-testing/"
+    static let startURL = "https://helloxr.app"
 }
