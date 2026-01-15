@@ -2,7 +2,6 @@ import Foundation
 import ARKit
 import SceneKit
 import WebKit
-import CoreImage
 
 @MainActor
 class ARWebCoordinator: NSObject, WKNavigationDelegate, ARSessionDelegate, WKScriptMessageHandler {
@@ -15,6 +14,8 @@ class ARWebCoordinator: NSObject, WKNavigationDelegate, ARSessionDelegate, WKScr
 
     var onSessionActiveChanged: ((Bool) -> Void)?
     var onNavigationChanged: (() -> Void)?
+    
+    private let cameraProcessor = ARCameraFrameProcessor()
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         onNavigationChanged?()
@@ -27,12 +28,6 @@ class ARWebCoordinator: NSObject, WKNavigationDelegate, ARSessionDelegate, WKScr
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         onNavigationChanged?()
     }
-
-    let ciContext = CIContext(options: [.useSoftwareRenderer: false])
-    let sRGBColorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
-
-    var frameCounter = 0
-    let videoFrameSkip = 4 
     
     func userContentController(
         _ userContentController: WKUserContentController, didReceive message: WKScriptMessage
@@ -139,13 +134,10 @@ class ARWebCoordinator: NSObject, WKNavigationDelegate, ARSessionDelegate, WKScr
                 let callbackName = self.dataCallbackName
             else { return }
 
-            frameCounter += 1
-            
-            let shouldSendVideo = isCameraAccessRequested && (frameCounter % videoFrameSkip == 0)
-
             let viewportSize = webView.bounds.size
             let orientation: UIInterfaceOrientation = .portrait
 
+            // 1. Calculate Matrices
             let viewMatrix = frame.camera.viewMatrix(for: orientation)
             let cameraTransform = viewMatrix.inverse
             
@@ -156,6 +148,7 @@ class ARWebCoordinator: NSObject, WKNavigationDelegate, ARSessionDelegate, WKScr
                 zFar: 1000
             )
 
+            // 2. Start building JS Command
             var jsCommand = "if(!window.NativeARData){window.NativeARData={};}"
             
             jsCommand += "window.NativeARData.timestamp = \(frame.timestamp * 1000);"
@@ -166,77 +159,26 @@ class ARWebCoordinator: NSObject, WKNavigationDelegate, ARSessionDelegate, WKScr
             jsCommand += "window.NativeARData.camera_view = \(fastFloatArrayToString(viewMatrix));"
             jsCommand += "window.NativeARData.projection_camera = \(fastFloatArrayToString(projMatrix));"
 
-            if shouldSendVideo {
-                let conversionResult = processCameraImage(frame.capturedImage, viewportSize: viewportSize)
-                
-                if let result = conversionResult {
-                    jsCommand += "window.NativeARData.video_data = '\(result.base64)';"
-                    jsCommand += "window.NativeARData.video_width = \(result.width);"
-                    jsCommand += "window.NativeARData.video_height = \(result.height);"
-                    jsCommand += "window.NativeARData.video_updated = true;"
-                } else {
-                    jsCommand += "window.NativeARData.video_updated = false;"
-                }
+            // 3. Delegate Video Processing
+            let conversionResult = cameraProcessor.process(
+                frame: frame,
+                viewportSize: viewportSize,
+                isCameraAccessRequested: isCameraAccessRequested
+            )
+            
+            if let result = conversionResult {
+                jsCommand += "window.NativeARData.video_data = '\(result.base64)';"
+                jsCommand += "window.NativeARData.video_width = \(result.width);"
+                jsCommand += "window.NativeARData.video_height = \(result.height);"
+                jsCommand += "window.NativeARData.video_updated = true;"
             } else {
-                 jsCommand += "window.NativeARData.video_updated = false;"
+                jsCommand += "window.NativeARData.video_updated = false;"
             }
 
             jsCommand += "\(callbackName)();"
 
             webView.evaluateJavaScript(jsCommand, completionHandler: nil)
         }
-    }
-
-    struct ProcessedImage {
-        let base64: String
-        let width: Int
-        let height: Int
-    }
-
-    private func processCameraImage(_ pixelBuffer: CVPixelBuffer, viewportSize: CGSize) -> ProcessedImage? {
-        var ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-        ciImage = ciImage.oriented(.right)
-        
-        let imgWidth = ciImage.extent.width
-        let imgHeight = ciImage.extent.height
-        
-        if imgWidth == 0 || imgHeight == 0 || viewportSize.width == 0 || viewportSize.height == 0 {
-            return nil
-        }
-        
-        let imageAspect = imgWidth / imgHeight
-        let viewportAspect = viewportSize.width / viewportSize.height
-        
-        var cropRect = ciImage.extent
-        
-        if imageAspect > viewportAspect {
-            let newWidth = imgHeight * viewportAspect
-            let xOffset = (imgWidth - newWidth) / 2.0
-            cropRect = CGRect(x: xOffset, y: 0, width: newWidth, height: imgHeight)
-        } else {
-            let newHeight = imgWidth / viewportAspect
-            let yOffset = (imgHeight - newHeight) / 2.0
-            cropRect = CGRect(x: 0, y: yOffset, width: imgWidth, height: newHeight)
-        }
-        
-        // 1. Crop to aspect ratio
-        let croppedImage = ciImage.cropped(to: cropRect)
-        
-        // 2. Reduce resolution by 2x
-        let scaledImage = croppedImage.transformed(by: CGAffineTransform(scaleX: 0.5, y: 0.5))
-        
-        guard let jpegData = ciContext.jpegRepresentation(
-            of: scaledImage,
-            colorSpace: sRGBColorSpace
-        ) else {
-            return nil
-        }
-        
-        return ProcessedImage(
-            base64: jpegData.base64EncodedString(),
-            width: Int(scaledImage.extent.width),
-            height: Int(scaledImage.extent.height)
-        )
     }
 
     private func toArray(_ m: simd_float4x4) -> [Float] {
