@@ -16,6 +16,8 @@ class ARWebCoordinator: NSObject, WKNavigationDelegate, ARSessionDelegate, WKScr
     var onSessionActiveChanged: ((Bool) -> Void)?
     var onNavigationChanged: (() -> Void)?
 
+    private var isJsProcessingFrame = false
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         onNavigationChanged?()
     }
@@ -132,58 +134,103 @@ class ARWebCoordinator: NSObject, WKNavigationDelegate, ARSessionDelegate, WKScr
         replyToJS(callback: callback, data: hitsPayload)
     }
 
+    // nonisolated func session(_ session: ARSession, didUpdate frame: ARFrame) {
+    //     MainActor.assumeIsolated {
+    //         guard isSessionRunning,
+    //             let webView = self.webView,
+    //             let callbackName = self.dataCallbackName
+    //         else { return }
+
+    //         frameCounter += 1
+            
+    //         let shouldSendVideo = isCameraAccessRequested && (frameCounter % videoFrameSkip == 0)
+
+    //         let viewportSize = webView.bounds.size
+    //         let orientation: UIInterfaceOrientation = .portrait
+
+    //         let viewMatrix = frame.camera.viewMatrix(for: orientation)
+    //         let cameraTransform = viewMatrix.inverse
+            
+    //         let projMatrix = frame.camera.projectionMatrix(
+    //             for: orientation,
+    //             viewportSize: viewportSize,
+    //             zNear: 0.001,
+    //             zFar: 1000
+    //         )
+
+    //         var jsCommand = "if(!window.NativeARData){window.NativeARData={};}"
+            
+    //         jsCommand += "window.NativeARData.timestamp = \(frame.timestamp * 1000);"
+    //         jsCommand += "window.NativeARData.light_intensity = \(frame.lightEstimate?.ambientIntensity ?? 1000);"
+    //         jsCommand += "window.NativeARData.worldMappingStatus = 'ar_worldmapping_not_available';"
+            
+    //         jsCommand += "window.NativeARData.camera_transform = \(fastFloatArrayToString(cameraTransform));"
+    //         jsCommand += "window.NativeARData.camera_view = \(fastFloatArrayToString(viewMatrix));"
+    //         jsCommand += "window.NativeARData.projection_camera = \(fastFloatArrayToString(projMatrix));"
+
+    //         if shouldSendVideo {
+    //             let conversionResult = processCameraImage(frame.capturedImage, viewportSize: viewportSize)
+                
+    //             if let result = conversionResult {
+    //                 jsCommand += "window.NativeARData.video_data = '\(result.base64)';"
+    //                 jsCommand += "window.NativeARData.video_width = \(result.width);"
+    //                 jsCommand += "window.NativeARData.video_height = \(result.height);"
+    //                 jsCommand += "window.NativeARData.video_updated = true;"
+    //             } else {
+    //                 jsCommand += "window.NativeARData.video_updated = false;"
+    //             }
+    //         } else {
+    //              jsCommand += "window.NativeARData.video_updated = false;"
+    //         }
+
+    //         jsCommand += "\(callbackName)();"
+
+    //         webView.evaluateJavaScript(jsCommand, completionHandler: nil)
+    //     }
+    // }
+
     nonisolated func session(_ session: ARSession, didUpdate frame: ARFrame) {
         MainActor.assumeIsolated {
+            // OPTIMIZATION 1: THE GATE
+            // If the JS bridge is still busy with the previous frame, we skip this update.
+            // This prevents "frame piling" which is the primary cause of AR wobble.
             guard isSessionRunning,
-                let webView = self.webView,
-                let callbackName = self.dataCallbackName
+                  !isJsProcessingFrame,
+                  let webView = self.webView,
+                  let callbackName = self.dataCallbackName
             else { return }
 
-            frameCounter += 1
-            
-            let shouldSendVideo = isCameraAccessRequested && (frameCounter % videoFrameSkip == 0)
+            isJsProcessingFrame = true
 
-            let viewportSize = webView.bounds.size
             let orientation: UIInterfaceOrientation = .portrait
+            let viewportSize = webView.bounds.size
 
+            // Calculate Matrices
             let viewMatrix = frame.camera.viewMatrix(for: orientation)
             let cameraTransform = viewMatrix.inverse
-            
             let projMatrix = frame.camera.projectionMatrix(
                 for: orientation,
                 viewportSize: viewportSize,
-                zNear: 0.001,
+                zNear: 0.01,
                 zFar: 1000
             )
 
+            // OPTIMIZATION 2: REMOVE VIDEO PROCESSING
+            // Stripped out convertPixelBufferToBase64 entirely.
+            // Since the WKWebView is transparent, the native ARSCNView already shows the camera.
             var jsCommand = "if(!window.NativeARData){window.NativeARData={};}"
-            
             jsCommand += "window.NativeARData.timestamp = \(frame.timestamp * 1000);"
             jsCommand += "window.NativeARData.light_intensity = \(frame.lightEstimate?.ambientIntensity ?? 1000);"
-            jsCommand += "window.NativeARData.worldMappingStatus = 'ar_worldmapping_not_available';"
-            
             jsCommand += "window.NativeARData.camera_transform = \(fastFloatArrayToString(cameraTransform));"
             jsCommand += "window.NativeARData.camera_view = \(fastFloatArrayToString(viewMatrix));"
             jsCommand += "window.NativeARData.projection_camera = \(fastFloatArrayToString(projMatrix));"
-
-            if shouldSendVideo {
-                let conversionResult = processCameraImage(frame.capturedImage, viewportSize: viewportSize)
-                
-                if let result = conversionResult {
-                    jsCommand += "window.NativeARData.video_data = '\(result.base64)';"
-                    jsCommand += "window.NativeARData.video_width = \(result.width);"
-                    jsCommand += "window.NativeARData.video_height = \(result.height);"
-                    jsCommand += "window.NativeARData.video_updated = true;"
-                } else {
-                    jsCommand += "window.NativeARData.video_updated = false;"
-                }
-            } else {
-                 jsCommand += "window.NativeARData.video_updated = false;"
-            }
-
+            jsCommand += "window.NativeARData.video_updated = false;" // Always false to save JS CPU
             jsCommand += "\(callbackName)();"
 
-            webView.evaluateJavaScript(jsCommand, completionHandler: nil)
+            // Execute and wait for completion before allowing the next frame
+            webView.evaluateJavaScript(jsCommand) { [weak self] _, _ in
+                self?.isJsProcessingFrame = false
+            }
         }
     }
 

@@ -38,7 +38,8 @@ struct ARWebView: UIViewRepresentable {
         let arView = ARSCNView(frame: .zero)
         arView.automaticallyUpdatesLighting = true
         arView.translatesAutoresizingMaskIntoConstraints = false
-        
+        arView.clipsToBounds = false
+
         // 2. Create Web View
         let webConfig = WKWebViewConfiguration()
         webConfig.allowsInlineMediaPlayback = true
@@ -73,9 +74,17 @@ struct ARWebView: UIViewRepresentable {
         if #available(iOS 16.4, *) { webView.isInspectable = true }
         
         // Default state: Opaque (Normal Browsing)
-        webView.isOpaque = true
-        webView.backgroundColor = .systemBackground
-        webView.scrollView.backgroundColor = .systemBackground
+        // webView.isOpaque = true
+        // webView.backgroundColor = .systemBackground
+        // webView.scrollView.backgroundColor = .systemBackground
+        // webView.translatesAutoresizingMaskIntoConstraints = false
+
+        webView.isOpaque = false
+        webView.backgroundColor = .clear
+        webView.scrollView.backgroundColor = .clear
+        webView.scrollView.bounces = false
+        //important for full screen
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
         webView.translatesAutoresizingMaskIntoConstraints = false
 
         // 3. Assemble View Hierarchy

@@ -5041,6 +5041,15 @@ host this content on a secure origin for the best user experience.
                 return null;
             };
             document.addEventListener('touchstart', event => {
+
+                // --- START NEW FIX: Ignore DOM Overlay touches ---
+                // If the touch target is inside the DOM Overlay, let standard HTML behavior happen.
+                // Do not convert this into an XR Controller press.
+                if (this._domOverlayRoot && this._domOverlayRoot.contains(event.target)) {
+                    return;
+                }
+                // --- END FIX ---
+
                 if (!event.touches || event.touches.length == 0) {
                     return;
                 }
@@ -5055,6 +5064,11 @@ host this content on a secure origin for the best user experience.
                 button.value = 1.0;
             });
             document.addEventListener('touchmove', event => {
+                //  [NEW FIX] Ignore touches on the DOM Overlay
+                if (this._domOverlayRoot && this._domOverlayRoot.contains(event.target)) {
+                    return;
+                }
+
                 if (!event.touches || event.touches.length == 0) {
                     return;
                 }
@@ -5066,6 +5080,11 @@ host this content on a secure origin for the best user experience.
                 this._touches[0].y = y;
             });
             document.addEventListener('touchend', event => {
+                // [NEW FIX] Ignore touches on the DOM Overlay
+                if (this._domOverlayRoot && this._domOverlayRoot.contains(event.target)) {
+                    return;
+                }
+
                 const x = this._touches[0].x;
                 const y = this._touches[0].y;
                 this._topMostDomElement = getTopMostDomElement(x, y);
@@ -5081,7 +5100,7 @@ host this content on a secure origin for the best user experience.
                 const styleEl = document.createElement('style');
                 document.head.appendChild(styleEl);
                 const styleSheet = styleEl.sheet;
-                styleSheet.insertRule('.arkit-device-wrapper { z-index: 0; display: none; }', 0);
+                styleSheet.insertRule('.arkit-device-wrapper { z-index: -1; display: none; }', 0);
                 styleSheet.insertRule('.arkit-device-wrapper, .xr-canvas { background-color: transparent; position: absolute; top: 0; left: 0; bottom: 0; right: 0; }', 0);
                 styleSheet.insertRule('.arkit-device-wrapper, .arkit-device-wrapper canvas { width: 100%; height: 100%; padding: 0; margin: 0; -webkit-user-select: none; user-select: none; }', 0);
             };
@@ -5265,50 +5284,67 @@ host this content on a secure origin for the best user experience.
             });
             return watchResult;
         }
-        onBaseLayerSet(sessionId, layer) {
+        
+         onBaseLayerSet(sessionId, layer) {
             const session = this._sessions.get(sessionId);
             const canvas = layer.context.canvas;
             const oldLayer = session.baseLayer;
             session.baseLayer = layer;
+
             if (!session.immersive) {
                 return;
             }
-            if (oldLayer !== null) {
-                const oldCanvas = oldLayer.context.canvas;
-                this._wrapperDiv.removeChild(oldCanvas);
-                oldCanvas.style.width = session.canvasWidth;
-                oldCanvas.style.height = session.canvasHeight;
-                oldCanvas.style.display = session.canvasDisplay;
-                oldCanvas.style.backgroundColor = session.canvasBackground;
+
+            // Force WebGL transparency
+            const gl = layer.context;
+            if (gl) {
+                gl.clearColor(0, 0, 0, 0);
+                gl.clear(gl.COLOR_BUFFER_BIT);
             }
-            session.bodyBackgroundColor = document.body.style.backgroundColor;
-            session.bodyBackgroundImage = document.body.style.backgroundImage;
+            // Set viewport to match the full screen
+            gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+
+            // 1. Force transparency on the root elements
+            session.htmlBackgroundWas = document.documentElement.style.backgroundColor;
+            session.bodyBackgroundWas = document.body.style.backgroundColor;
+            
+            document.documentElement.style.backgroundColor = "transparent";
             document.body.style.backgroundColor = "transparent";
             document.body.style.backgroundImage = "none";
+
+            // 2. Hide existing DOM elements to prevent UI overlap
             var children = document.body.children;
             for (var i = 0; i < children.length; i++) {
                 var child = children[i];
-                if (child != this._wrapperDiv && child != canvas &&
+                if (child !== this._wrapperDiv && child !== canvas &&
                     (!this._domOverlayRoot || !this._domOverlayRoot.contains(child))) {
-                    var display = child.style.display;
-                    child._displayChanged = true;
-                    child._displayWas = display;
-                    child.style.display = "none";
+                    // Store original display style to restore later
+                    if (!child._displayChanged) {
+                        child._displayWas = window.getComputedStyle(child).display;
+                        child._displayChanged = true;
+                        child.style.display = "none";
+                    }
                 }
             }
+
+            // 3. Setup Canvas for AR
             session.canvasParent = canvas.parentNode;
             session.canvasNextSibling = canvas.nextSibling;
             session.canvasDisplay = canvas.style.display;
-            canvas.style.display = "block";
-            session.canvasBackground = canvas.style.backgroundColor;
-            canvas.style.backgroundColor = "transparent";
             session.canvasWidth = canvas.style.width;
             session.canvasHeight = canvas.style.height;
-            canvas.style.width = "100%";
-            canvas.style.height = "100%";
+
+            canvas.style.display = "block";
+            canvas.style.backgroundColor = "transparent";
+            canvas.style.width = "100vw";
+            canvas.style.height = "100vh";
+
+            // Move canvas into our AR wrapper
             this._wrapperDiv.appendChild(canvas);
             this._wrapperDiv.style.display = "block";
+            this._wrapperDiv.style.zIndex = "1"; // Ensure it sits correctly
         }
+
         userEndedSession() {
             if (this._activeSession) {
                 let session = this._activeSession;
