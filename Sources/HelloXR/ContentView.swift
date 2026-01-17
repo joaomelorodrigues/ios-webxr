@@ -27,7 +27,7 @@ struct ContentView: View {
                 .edgesIgnoringSafeArea(.all)
             
             // 2. Main Content
-            ZStack(alignment: .bottom) {
+            ZStack(alignment: .top) {
                 // AR Web View
                 ARWebView(
                     action: $navAction,
@@ -41,7 +41,6 @@ struct ContentView: View {
                 // 3. UI Overlay
                 if !isARActive {
                     VStack {
-                        Spacer()
                         if isNavExpanded {
                             controlBar
                                 .transition(.move(edge: .top).combined(with: .opacity))
@@ -51,12 +50,12 @@ struct ContentView: View {
                                 Spacer()
                                 navToggleButton
                                     .transition(.scale.combined(with: .opacity))
-                                Spacer()
                             }
+                            .padding(.trailing, 8)
                         }
-                        
+                        Spacer()
                     }
-                    .padding(.bottom, 20)
+                    .padding(.top, 20)
                 }
                 
                 // 4. AR Exit Button
