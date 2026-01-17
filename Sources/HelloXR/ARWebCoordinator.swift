@@ -17,6 +17,8 @@ class ARWebCoordinator: NSObject, WKNavigationDelegate, ARSessionDelegate, WKScr
     
     private let cameraProcessor = ARCameraFrameProcessor()
 
+    private var isJsProcessingFrame = false
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         onNavigationChanged?()
     }
@@ -129,32 +131,33 @@ class ARWebCoordinator: NSObject, WKNavigationDelegate, ARSessionDelegate, WKScr
 
     nonisolated func session(_ session: ARSession, didUpdate frame: ARFrame) {
         MainActor.assumeIsolated {
+            // If the JS bridge is still busy with the previous frame, we skip this update.
+            // This prevents "frame piling" which is the primary cause of AR wobble.
             guard isSessionRunning,
-                let webView = self.webView,
-                let callbackName = self.dataCallbackName
+                  !isJsProcessingFrame,
+                  let webView = self.webView,
+                  let callbackName = self.dataCallbackName
             else { return }
 
-            let viewportSize = webView.bounds.size
+            isJsProcessingFrame = true
+
             let orientation: UIInterfaceOrientation = .portrait
+            let viewportSize = webView.bounds.size
 
             // 1. Calculate Matrices
             let viewMatrix = frame.camera.viewMatrix(for: orientation)
             let cameraTransform = viewMatrix.inverse
-            
             let projMatrix = frame.camera.projectionMatrix(
                 for: orientation,
                 viewportSize: viewportSize,
-                zNear: 0.001,
+                zNear: 0.01,
                 zFar: 1000
             )
 
             // 2. Start building JS Command
             var jsCommand = "if(!window.NativeARData){window.NativeARData={};}"
-            
             jsCommand += "window.NativeARData.timestamp = \(frame.timestamp * 1000);"
             jsCommand += "window.NativeARData.light_intensity = \(frame.lightEstimate?.ambientIntensity ?? 1000);"
-            jsCommand += "window.NativeARData.worldMappingStatus = 'ar_worldmapping_not_available';"
-            
             jsCommand += "window.NativeARData.camera_transform = \(fastFloatArrayToString(cameraTransform));"
             jsCommand += "window.NativeARData.camera_view = \(fastFloatArrayToString(viewMatrix));"
             jsCommand += "window.NativeARData.projection_camera = \(fastFloatArrayToString(projMatrix));"
@@ -177,7 +180,10 @@ class ARWebCoordinator: NSObject, WKNavigationDelegate, ARSessionDelegate, WKScr
 
             jsCommand += "\(callbackName)();"
 
-            webView.evaluateJavaScript(jsCommand, completionHandler: nil)
+            // Execute and wait for completion before allowing the next frame
+            webView.evaluateJavaScript(jsCommand) { [weak self] _, _ in
+                self?.isJsProcessingFrame = false
+            }
         }
     }
 
