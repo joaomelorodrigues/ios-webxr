@@ -1,5 +1,6 @@
 import * as fs from 'fs-extra';
 import * as path from 'path';
+import { execSync } from 'child_process';
 import { WhitelabelConfig } from './validator';
 import { shouldExclude, replaceVariables, readFileSafe, writeFileSafe, promptOverwrite } from './utils';
 
@@ -158,6 +159,110 @@ export async function renameEntitlements(outputDir: string, config: WhitelabelCo
   }
 }
 
+export async function generateAppIcons(outputDir: string, config: WhitelabelConfig): Promise<void> {
+  const proj = config.project;
+  const app = config.app;
+  const mainTarget = app.mainTargetName || proj.name;
+
+  // Look for icon.png in template/output directory
+  const iconSource = path.join(outputDir, 'icon.png');
+  
+  if (!(await fs.pathExists(iconSource))) {
+    console.log('  ⚠ Warning: icon.png not found, skipping icon generation');
+    return;
+  }
+
+  console.log('  Generating app icons...');
+
+  // Determine assets directory path (Sources/App or Sources/{AppName})
+  const sourcesDir = path.join(outputDir, 'Sources');
+  let appSourceDir: string;
+  
+  // Check if Sources/App exists (template structure)
+  if (await fs.pathExists(path.join(sourcesDir, 'App'))) {
+    appSourceDir = path.join(sourcesDir, 'App');
+  } else {
+    // Try Sources/{AppName} structure
+    appSourceDir = path.join(sourcesDir, mainTarget);
+    if (!(await fs.pathExists(appSourceDir))) {
+      console.log(`  ⚠ Warning: Could not find Sources/App or Sources/${mainTarget}, skipping icon generation`);
+      return;
+    }
+  }
+
+  const assetsDir = path.join(appSourceDir, 'Assets.xcassets');
+  const iconsetDir = path.join(assetsDir, 'AppIcon.appiconset');
+  
+  await fs.ensureDir(iconsetDir);
+
+  // Create Assets.xcassets Contents.json if it doesn't exist
+  const assetsContentsPath = path.join(assetsDir, 'Contents.json');
+  if (!(await fs.pathExists(assetsContentsPath))) {
+    const assetsContents = {
+      info: { version: 1, author: 'xcode' },
+    };
+    await fs.writeJSON(assetsContentsPath, assetsContents, { spaces: 2 });
+  }
+
+  // Generate Contents.json
+  const contentsJson = {
+    images: [
+      { size: '20x20', idiom: 'iphone', filename: 'Icon-20@2x.png', scale: '2x' },
+      { size: '20x20', idiom: 'iphone', filename: 'Icon-20@3x.png', scale: '3x' },
+      { size: '29x29', idiom: 'iphone', filename: 'Icon-29@2x.png', scale: '2x' },
+      { size: '29x29', idiom: 'iphone', filename: 'Icon-29@3x.png', scale: '3x' },
+      { size: '40x40', idiom: 'iphone', filename: 'Icon-40@2x.png', scale: '2x' },
+      { size: '40x40', idiom: 'iphone', filename: 'Icon-40@3x.png', scale: '3x' },
+      { size: '60x60', idiom: 'iphone', filename: 'Icon-60@2x.png', scale: '2x' },
+      { size: '60x60', idiom: 'iphone', filename: 'Icon-60@3x.png', scale: '3x' },
+      { size: '20x20', idiom: 'ipad', filename: 'Icon-20.png', scale: '1x' },
+      { size: '20x20', idiom: 'ipad', filename: 'Icon-20@2x.png', scale: '2x' },
+      { size: '29x29', idiom: 'ipad', filename: 'Icon-29.png', scale: '1x' },
+      { size: '29x29', idiom: 'ipad', filename: 'Icon-29@2x.png', scale: '2x' },
+      { size: '40x40', idiom: 'ipad', filename: 'Icon-40.png', scale: '1x' },
+      { size: '40x40', idiom: 'ipad', filename: 'Icon-40@2x.png', scale: '2x' },
+      { size: '76x76', idiom: 'ipad', filename: 'Icon-76.png', scale: '1x' },
+      { size: '76x76', idiom: 'ipad', filename: 'Icon-76@2x.png', scale: '2x' },
+      { size: '83.5x83.5', idiom: 'ipad', filename: 'Icon-83.5@2x.png', scale: '2x' },
+      { size: '1024x1024', idiom: 'ios-marketing', filename: 'Icon-1024.png', scale: '1x' },
+    ],
+    info: { version: 1, author: 'xcode' },
+  };
+
+  await fs.writeJSON(path.join(iconsetDir, 'Contents.json'), contentsJson, { spaces: 2 });
+
+  // Resize function using sips (macOS)
+  function resize(size: number, filename: string): void {
+    try {
+      execSync(
+        `sips -z ${size} ${size} -s format png "${iconSource}" --out "${path.join(iconsetDir, filename)}"`,
+        { stdio: 'ignore' }
+      );
+    } catch (error) {
+      console.log(`  ⚠ Warning: Failed to resize ${filename}: ${error}`);
+    }
+  }
+
+  // Generate all icon sizes
+  resize(40, 'Icon-20@2x.png');
+  resize(60, 'Icon-20@3x.png');
+  resize(58, 'Icon-29@2x.png');
+  resize(87, 'Icon-29@3x.png');
+  resize(80, 'Icon-40@2x.png');
+  resize(120, 'Icon-40@3x.png');
+  resize(120, 'Icon-60@2x.png');
+  resize(180, 'Icon-60@3x.png');
+  resize(20, 'Icon-20.png');
+  resize(29, 'Icon-29.png');
+  resize(40, 'Icon-40.png');
+  resize(76, 'Icon-76.png');
+  resize(152, 'Icon-76@2x.png');
+  resize(167, 'Icon-83.5@2x.png');
+  resize(1024, 'Icon-1024.png');
+
+  console.log('  ✓ App icons generated');
+}
+
 export async function generateWhitelabel(
   config: WhitelabelConfig,
   templateDir: string,
@@ -266,6 +371,9 @@ export async function generateWhitelabel(
     await updateFile(outputPath, filePath, fileVars);
     console.log(`  ✓ Updated ${filePath}`);
   }
+
+  // Generate app icons
+  await generateAppIcons(outputPath, config);
 
   console.log(`\n✅ White-label project generated successfully in: ${outputPath}`);
   console.log('\nNext steps:');

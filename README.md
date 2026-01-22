@@ -44,7 +44,10 @@ Built on **WebXRKit**, a reusable Swift Package that provides the WebXR polyfill
    - Xcode version requirement
    - Target names (optional)
 
-3. **Generate your Xcode project:**
+3. **Add your app icon (optional):**
+   Place a `icon.png` file (1024x1024 pixels) in your project root directory. The CLI will automatically generate all required icon sizes for iOS.
+
+4. **Generate your Xcode project:**
    ```bash
    cd MyApp
    xcodegen generate
@@ -62,7 +65,10 @@ If you prefer to use a config file instead of interactive prompts:
 
 2. **Edit `myapp.config.json`** with your values (see Configuration Reference below)
 
-3. **Run with config file:**
+3. **Add your app icon (optional):**
+   Place a `icon.png` file (1024x1024 pixels) in the template directory or output directory. The CLI will automatically generate all required icon sizes.
+
+4. **Run with config file:**
    ```bash
    npx --prefix cli ios-webxr-cli -f myapp.config.json
    ```
@@ -170,6 +176,40 @@ npx --prefix cli ios-webxr-cli -f myapp.config.json -o ../MyApp
 **`ios`**
 - `deploymentTarget`: Minimum iOS version (e.g., `16.0`)
 - `xcodeVersion`: Xcode version requirement (e.g., `15.0`)
+
+## App Icon Generation
+
+The CLI automatically generates all required iOS app icon sizes from a single source image.
+
+### Setup
+
+1. **Create your icon:**
+   - Create a 1024x1024 pixel PNG image
+   - Name it `icon.png`
+   - Place it in your project root directory (same directory as your config file)
+
+2. **Generate icons:**
+   When you run the CLI, it will automatically:
+   - Detect `icon.png` in the output directory
+   - Create `Sources/App/Assets.xcassets/AppIcon.appiconset/` structure
+   - Generate all required icon sizes:
+     - iPhone: 20pt, 29pt, 40pt, 60pt (@2x, @3x)
+     - iPad: 20pt, 29pt, 40pt, 76pt, 83.5pt (@1x, @2x)
+     - Marketing: 1024x1024
+
+3. **Verify icons:**
+   After generation, check:
+   ```
+   YourApp/Sources/App/Assets.xcassets/AppIcon.appiconset/
+   ```
+   You should see 17 icon files and a `Contents.json` file.
+
+4. **View in Xcode:**
+   After running `xcodegen generate`, open the project in Xcode and navigate to:
+   - Your app target → `Assets.xcassets` → `AppIcon`
+   - All icon slots should be populated
+
+**Note:** If `icon.png` is not found, the CLI will skip icon generation and show a warning. You can add icons manually later in Xcode.
 
 ## App Clip Setup
 
@@ -298,6 +338,13 @@ xcodegen generate
 - **Wrong Content-Type**: Ensure server returns `application/json`
 - **Redirects**: AASA file must be directly accessible (no redirects)
 - **HTTPS required**: Must use HTTPS, not HTTP
+
+### App Icon Issues
+
+- **Icons not appearing**: Ensure `icon.png` is in the project root directory before running the CLI
+- **Missing icon sizes**: Regenerate icons by running the CLI again (it will overwrite existing icons)
+- **Icons not showing in Xcode**: Regenerate the Xcode project with `xcodegen generate` after icon generation
+- **Icon generation skipped**: The CLI requires macOS with `sips` command available. On other platforms, add icons manually in Xcode.
 
 ## Performance & Limitations
 
