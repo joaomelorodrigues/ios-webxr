@@ -3,13 +3,23 @@ import ARKit
 import CoreImage
 
 /// Handles the "computer vision" aspect: converting ARFrame pixel buffers
-/// into web-friendly Base64 JPEG strings.
+/// into web-friendly JPEG data.
+///
+/// Supports two modes:
+/// - Binary mode (preferred): Stores raw JPEG in ARFrameSchemeHandler for URL-based access
+/// - Legacy Base64 mode: Returns Base64-encoded string (slower, higher memory)
 class ARCameraFrameProcessor {
     
     struct ProcessedFrame {
-        let base64: String
+        /// Raw JPEG data (for binary transfer via URL scheme)
+        let data: Data
         let width: Int
         let height: Int
+        
+        /// Legacy Base64 accessor - only compute when needed
+        var base64: String {
+            data.base64EncodedString()
+        }
     }
 
     private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
@@ -17,7 +27,10 @@ class ARCameraFrameProcessor {
     
     // Logic to throttle processing (processing every frame is too heavy for JS)
     private var frameCounter = 0
-    private let videoFrameSkip = 4 
+    private let videoFrameSkip = 4
+    
+    /// When true, uses the binary URL scheme (faster). When false, uses Base64 (legacy).
+    var useBinaryTransfer = true
 
     /// Attempts to process the current frame. Returns nil if the frame should be skipped
     /// or if processing failed.
@@ -30,7 +43,16 @@ class ARCameraFrameProcessor {
         guard shouldProcess else { return nil }
         
         // 2. Perform Image Processing
-        return convertImage(frame.capturedImage, viewportSize: viewportSize)
+        guard let result = convertImage(frame.capturedImage, viewportSize: viewportSize) else {
+            return nil
+        }
+        
+        // 3. If using binary transfer, update the shared frame storage
+        if useBinaryTransfer {
+            ARFrameStorage.shared.update(data: result.data, width: result.width, height: result.height)
+        }
+        
+        return result
     }
 
     private func convertImage(_ pixelBuffer: CVPixelBuffer, viewportSize: CGSize) -> ProcessedFrame? {
@@ -74,7 +96,7 @@ class ARCameraFrameProcessor {
         }
         
         return ProcessedFrame(
-            base64: jpegData.base64EncodedString(),
+            data: jpegData,
             width: Int(scaledImage.extent.width),
             height: Int(scaledImage.extent.height)
         )

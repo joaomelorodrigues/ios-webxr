@@ -62,6 +62,11 @@ public struct ARWebView: UIViewRepresentable {
         // 2. Create Web View
         let webConfig = WKWebViewConfiguration()
         webConfig.allowsInlineMediaPlayback = true
+        
+        // Register custom URL scheme for binary frame transfer (avoids Base64 overhead)
+        let frameSchemeHandler = ARFrameSchemeHandler()
+        webConfig.setURLSchemeHandler(frameSchemeHandler, forURLScheme: ARFrameSchemeHandler.scheme)
+        
         let contentController = webConfig.userContentController
         
         // Register handlers

@@ -171,10 +171,22 @@ public class ARWebCoordinator: NSObject, WKNavigationDelegate, ARSessionDelegate
             )
             
             if let result = conversionResult {
-                jsCommand += "window.NativeARData.video_data = '\(result.base64)';"
-                jsCommand += "window.NativeARData.video_width = \(result.width);"
-                jsCommand += "window.NativeARData.video_height = \(result.height);"
-                jsCommand += "window.NativeARData.video_updated = true;"
+                // Binary transfer mode: only send dimensions and timestamp, JS fetches frame via URL scheme
+                // This avoids the ~33% overhead of Base64 encoding and large string creation
+                if cameraProcessor.useBinaryTransfer {
+                    jsCommand += "window.NativeARData.video_width = \(result.width);"
+                    jsCommand += "window.NativeARData.video_height = \(result.height);"
+                    jsCommand += "window.NativeARData.video_frame_id = \(frame.timestamp);"
+                    jsCommand += "window.NativeARData.video_updated = true;"
+                    jsCommand += "window.NativeARData.video_use_url = true;"
+                } else {
+                    // Legacy Base64 mode (fallback)
+                    jsCommand += "window.NativeARData.video_data = '\(result.base64)';"
+                    jsCommand += "window.NativeARData.video_width = \(result.width);"
+                    jsCommand += "window.NativeARData.video_height = \(result.height);"
+                    jsCommand += "window.NativeARData.video_updated = true;"
+                    jsCommand += "window.NativeARData.video_use_url = false;"
+                }
             } else {
                 jsCommand += "window.NativeARData.video_updated = false;"
             }

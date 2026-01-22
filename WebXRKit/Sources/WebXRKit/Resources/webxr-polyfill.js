@@ -4295,7 +4295,7 @@ host this content on a secure origin for the best user experience.
 
             // Only update the video texture if the native side says it's new.
             // This prevents re-assigning the same src or empty data when throttled.
-            if (sourceData.video_updated && sourceData.video_data) {
+            if (sourceData.video_updated) {
                 if (ARKitWrapper.GLOBAL_INSTANCE && ARKitWrapper.GLOBAL_INSTANCE._deviceRef) {
                     const dev = ARKitWrapper.GLOBAL_INSTANCE._deviceRef;
                     dev._cameraMetadata.width = sourceData.video_width || 0;
@@ -4303,7 +4303,33 @@ host this content on a secure origin for the best user experience.
 
                     // Assigning src triggers the onload/decoding. 
                     // We only want to do this at 10fps, not 60fps.
-                    dev._cameraImage.src = "data:image/jpeg;base64," + sourceData.video_data;
+                    if (sourceData.video_use_url && sourceData.video_frame_id) {
+                        // Binary transfer via URL scheme - faster, no Base64 overhead
+                        const frameUrl = "webxr-frame://frame?t=" + sourceData.video_frame_id;
+                        
+                        // Set up error handler to detect scheme failures (only once)
+                        if (!dev._cameraImage._hasUrlErrorHandler) {
+                            dev._cameraImage._hasUrlErrorHandler = true;
+                            dev._cameraImage._urlSchemeFailed = false;
+                            dev._cameraImage.addEventListener('error', function() {
+                                // If URL scheme fails, mark it so we can fall back
+                                if (dev._cameraImage.src && dev._cameraImage.src.startsWith('webxr-frame://')) {
+                                    console.warn('WebXR: URL scheme failed, will use Base64 fallback if available');
+                                    dev._cameraImage._urlSchemeFailed = true;
+                                }
+                            });
+                        }
+                        
+                        // Use URL scheme if it hasn't failed, otherwise use Base64 if available
+                        if (!dev._cameraImage._urlSchemeFailed) {
+                            dev._cameraImage.src = frameUrl;
+                        } else if (sourceData.video_data) {
+                            dev._cameraImage.src = "data:image/jpeg;base64," + sourceData.video_data;
+                        }
+                    } else if (sourceData.video_data) {
+                        // Legacy Base64 fallback
+                        dev._cameraImage.src = "data:image/jpeg;base64," + sourceData.video_data;
+                    }
                 }
             }
 
