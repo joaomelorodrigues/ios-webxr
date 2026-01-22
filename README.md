@@ -51,7 +51,7 @@ Built on **WebXRKit**, a reusable Swift Package that provides the WebXR polyfill
    open MyApp.xcodeproj
    ```
 
-**Alternative: Using a config file**
+**Using a config file (optional)**
 
 If you prefer to use a config file instead of interactive prompts:
 
@@ -66,17 +66,6 @@ If you prefer to use a config file instead of interactive prompts:
    ```bash
    npx --prefix cli ios-webxr-cli -f myapp.config.json
    ```
-
-**Alternative: Install globally (optional)**
-
-If you prefer to install it globally:
-```bash
-cd cli
-npm install
-npm link
-cd ..
-ios-webxr-cli
-```
 
 ### Option 2: Use Template Directly
 
